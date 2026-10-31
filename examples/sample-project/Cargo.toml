@@ -1,0 +1,9 @@
+[package]
+name = "sample-project"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+# Standalone workspace root, so this example never attaches itself to codesearch's package.
+[workspace]
