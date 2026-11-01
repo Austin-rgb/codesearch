@@ -11,8 +11,24 @@
 //! positional is therefore inspected by hand: `index` and `stats` select the
 //! commands, anything else is the query.
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
+
+/// `lint` output format.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutputFormat {
+    Text,
+    Json,
+}
+
+/// `lint` exit-status policy.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FailOn {
+    /// Exit 1 when any finding exists.
+    Warn,
+    /// Always exit 0 unless an error occurred.
+    Never,
+}
 
 const AFTER_HELP: &str = r#"Query syntax:
   (ParamType, ...) -> ReturnType
@@ -33,6 +49,11 @@ Examples:
   codesearch --ignore-self "UserId -> User"     # also finds fn get(&self, id: UserId) -> User
   codesearch index ./my-project
   codesearch --project ./my-project stats
+
+Lint (flags public functions that are hard to find or easy to misuse):
+  codesearch lint                                  # lint the current project
+  codesearch lint ./my-project --format json
+  codesearch lint --rule R001 --fail-on warn       # exit 1 if anything is flagged
 "#;
 
 #[derive(Parser, Debug)]
@@ -40,7 +61,7 @@ Examples:
     name = "codesearch",
     version,
     about = "Find Rust functions by their parameter and return types",
-    override_usage = "codesearch [OPTIONS] <QUERY>\n       codesearch [OPTIONS] index [PATH]\n       codesearch [OPTIONS] stats",
+    override_usage = "codesearch [OPTIONS] <QUERY>\n       codesearch [OPTIONS] index [PATH]\n       codesearch [OPTIONS] stats\n       codesearch [OPTIONS] lint [PATH]",
     after_help = AFTER_HELP
 )]
 pub struct Cli {
@@ -60,7 +81,19 @@ pub struct Cli {
     #[arg(long)]
     pub no_update: bool,
 
-    /// A signature query, or one of the commands `index [PATH]` / `stats`
+    /// `lint` only: output format
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub format: OutputFormat,
+
+    /// `lint` only: run just these rules (comma-separated ids, e.g. R001,R002)
+    #[arg(long, value_delimiter = ',', value_name = "IDS")]
+    pub rule: Vec<String>,
+
+    /// `lint` only: `warn` exits 1 when anything is flagged; `never` always exits 0
+    #[arg(long, value_enum, default_value_t = FailOn::Never)]
+    pub fail_on: FailOn,
+
+    /// A signature query, or one of the commands `index [PATH]` / `stats` / `lint [PATH]`
     #[arg(value_name = "QUERY | COMMAND")]
     pub args: Vec<String>,
 }
@@ -74,6 +107,12 @@ pub enum Action {
     },
     Stats {
         project: PathBuf,
+    },
+    Lint {
+        path: PathBuf,
+        format: OutputFormat,
+        rules: Vec<String>,
+        fail_on: FailOn,
     },
     Search {
         project: PathBuf,
@@ -91,6 +130,9 @@ impl Cli {
             force,
             ignore_self,
             no_update,
+            format,
+            rule,
+            fail_on,
             args,
         } = self;
 
@@ -117,6 +159,21 @@ impl Cli {
                     );
                 }
                 Ok(Action::Stats { project })
+            }
+            Some("lint") => {
+                if args.len() > 2 {
+                    return Err("`lint` takes at most one directory".to_string());
+                }
+                let path = match args.get(1) {
+                    Some(p) => PathBuf::from(p),
+                    None => project,
+                };
+                Ok(Action::Lint {
+                    path,
+                    format,
+                    rules: rule,
+                    fail_on,
+                })
             }
             Some(_) => {
                 if args.len() > 1 {

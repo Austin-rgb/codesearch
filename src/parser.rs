@@ -135,7 +135,10 @@ fn lex(input: &str) -> Result<Vec<Token>, ParseError> {
                     break;
                 }
             }
-            tokens.push(Token { tok: Tok::Ident(text), pos });
+            tokens.push(Token {
+                tok: Tok::Ident(text),
+                pos,
+            });
             continue;
         }
 
@@ -149,7 +152,10 @@ fn lex(input: &str) -> Result<Vec<Token>, ParseError> {
                     break;
                 }
             }
-            tokens.push(Token { tok: Tok::Number(text), pos });
+            tokens.push(Token {
+                tok: Tok::Number(text),
+                pos,
+            });
             continue;
         }
 
@@ -203,7 +209,12 @@ fn lex(input: &str) -> Result<Vec<Token>, ParseError> {
                     }
                 }
                 if !named {
-                    return Err(make_error(input, pos, "expected a lifetime name after `'`", None));
+                    return Err(make_error(
+                        input,
+                        pos,
+                        "expected a lifetime name after `'`",
+                        None,
+                    ));
                 }
                 Tok::Lifetime
             }
@@ -281,10 +292,7 @@ impl Parser<'_> {
         if self.eat(&tok) {
             Ok(())
         } else {
-            Err(self.error(format!(
-                "expected {what}, found {}",
-                self.peek().describe()
-            )))
+            Err(self.error(format!("expected {what}, found {}", self.peek().describe())))
         }
     }
 
@@ -430,10 +438,9 @@ impl Parser<'_> {
                     segments.push(name);
                 }
                 other => {
-                    return Err(self.error(format!(
-                        "expected a type name, found {}",
-                        other.describe()
-                    )));
+                    return Err(
+                        self.error(format!("expected a type name, found {}", other.describe()))
+                    );
                 }
             }
             if !self.eat(&Tok::PathSep) {

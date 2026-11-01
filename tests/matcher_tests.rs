@@ -96,7 +96,10 @@ fn tuple_return_types() {
         fn triple(u: UserId, t: TenantId) -> (User, Metadata, Extra) { todo!() }
         fn plain(u: UserId, t: TenantId) -> User { todo!() }
     ";
-    assert_eq!(names(src, "(UserId, TenantId) -> (User, Metadata)"), vec!["both"]);
+    assert_eq!(
+        names(src, "(UserId, TenantId) -> (User, Metadata)"),
+        vec!["both"]
+    );
     assert_eq!(
         names(src, "(UserId, TenantId) -> (Metadata, User)"),
         vec!["reversed"]
@@ -123,7 +126,10 @@ fn generic_return_types() {
         fn get_user(id: UserId) -> Option<UserDetails> { todo!() }
         fn find_user(id: UserId) -> Result<UserDetails, Error> { todo!() }
     ";
-    assert_eq!(names(src, "UserId -> Option<UserDetails>"), vec!["get_user"]);
+    assert_eq!(
+        names(src, "UserId -> Option<UserDetails>"),
+        vec!["get_user"]
+    );
     assert_eq!(
         names(src, "UserId -> Result<UserDetails, Error>"),
         vec!["find_user"]
@@ -256,10 +262,19 @@ fn ignore_self_hides_the_receiver() {
         names_with(src, "UserId -> User", ignoring_self()),
         vec!["get", "free"]
     );
-    assert_eq!(names_with(src, "UserId -> ()", ignoring_self()), vec!["set"]);
-    assert_eq!(names_with(src, "() -> Repo", ignoring_self()), vec!["into_inner"]);
+    assert_eq!(
+        names_with(src, "UserId -> ()", ignoring_self()),
+        vec!["set"]
+    );
+    assert_eq!(
+        names_with(src, "() -> Repo", ignoring_self()),
+        vec!["into_inner"]
+    );
     // functions without a receiver are unaffected
-    assert_eq!(names_with(src, "Username -> Self", ignoring_self()), vec!["create"]);
+    assert_eq!(
+        names_with(src, "Username -> Self", ignoring_self()),
+        vec!["create"]
+    );
 }
 
 #[test]
@@ -314,7 +329,10 @@ fn path_prefixes_are_matched_as_suffixes() {
     ";
     assert_eq!(names(src, "HashMap<K, V> -> ()"), vec!["a", "b", "c"]);
     // an unqualified candidate (`b`) is compatible with any qualified query
-    assert_eq!(names(src, "collections::HashMap<K, V> -> ()"), vec!["a", "b"]);
+    assert_eq!(
+        names(src, "collections::HashMap<K, V> -> ()"),
+        vec!["a", "b"]
+    );
     assert_eq!(
         names(src, "std::collections::HashMap<K, V> -> ()"),
         vec!["a", "b"]
@@ -344,7 +362,10 @@ fn trait_methods_are_searchable() {
             fn default_user() -> User { todo!() }
         }
     ";
-    assert_eq!(names(src, "() -> User"), vec!["default_user", "default_user"]);
+    assert_eq!(
+        names(src, "() -> User"),
+        vec!["default_user", "default_user"]
+    );
     assert_eq!(
         names_with(src, "UserId -> Option<User>", ignoring_self()),
         vec!["get", "get"]
@@ -363,6 +384,9 @@ fn type_matches_directly() {
     assert!(!type_matches(&session, &option_session));
     assert!(!type_matches(&option_session, &session));
     assert!(!type_matches(&TypeExpr::Unit, &session));
-    assert!(!type_matches(&TypeExpr::Unit, &TypeExpr::Tuple(vec![session.clone()])));
+    assert!(!type_matches(
+        &TypeExpr::Unit,
+        &TypeExpr::Tuple(vec![session.clone()])
+    ));
     assert!(!type_matches(&session, &TypeExpr::Wildcard));
 }

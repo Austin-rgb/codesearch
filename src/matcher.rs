@@ -124,11 +124,7 @@ pub fn type_matches(query: &TypeExpr, candidate: &TypeExpr) -> bool {
 }
 
 fn all_match(query: &[TypeExpr], candidate: &[TypeExpr]) -> bool {
-    query.len() == candidate.len()
-        && query
-            .iter()
-            .zip(candidate)
-            .all(|(q, c)| type_matches(q, c))
+    query.len() == candidate.len() && query.iter().zip(candidate).all(|(q, c)| type_matches(q, c))
 }
 
 /// `Session` matches `auth::Session`, but `a::Session` does not match `b::Session`.

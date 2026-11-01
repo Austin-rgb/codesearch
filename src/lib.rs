@@ -13,6 +13,7 @@
 pub mod cli;
 pub mod extractor;
 pub mod index;
+pub mod lint;
 pub mod matcher;
 pub mod parser;
 pub mod search;

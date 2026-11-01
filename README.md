@@ -134,6 +134,7 @@ src/
 ├── matcher.rs    Query × FunctionSig → bool       (recursive structural match)
 ├── index.rs      SQLite schema, incremental update, candidate streaming
 ├── search.rs     orchestration + terminal formatting
+├── lint/         `codesearch lint`: Rule trait, config, rules/r001.rs, rules/r002.rs, report.rs
 ├── cli.rs        clap definitions
 ├── lib.rs        module wiring (needed so tests/ can import the crate)
 └── main.rs       thin binary entry point
@@ -159,6 +160,109 @@ contains its own `.gitignore`, so it won't be committed.
 
 Files that `syn` can't parse (e.g. mid-edit syntax errors) are recorded with zero functions,
 counted in `codesearch stats`, and retried as soon as their content changes.
+
+## Lint
+
+`codesearch lint [PATH]` flags **public functions that are hard to find or easy to misuse** through
+signature search. It reads the same SQLite index as search (refreshed incrementally first, so a
+second run re-parses nothing that did not change).
+
+```sh
+codesearch lint                                    # current project, text output
+codesearch lint ./my-project --format json
+codesearch lint --rule R001 --fail-on warn         # one rule; exit 1 if anything is flagged
+```
+
+### Rules
+
+| Id | Name | Flags a `pub` function when... |
+| --- | --- | --- |
+| `R001` | primitive-heavy-signature | **(a)** two or more parameters share the same bare primitive type; **(b)** a parameter (or the return type) is a bare primitive and the parameter name (or function name) contains a domain word such as `id`, `email`, `amount`; **(c)** it has three or more parameters and all are bare primitives |
+| `R002` | missing-intent-line | **(a)** it has no doc comment; **(b)** the first doc line is empty, shorter than 15 characters, or only restates the function name; **(c)** the first doc line does not end with a period, or the first paragraph exceeds 200 characters |
+
+Both rules apply only to plain `pub` functions and methods (not `pub(crate)`, `pub(super)`,
+`pub(in ..)` or private ones). A function gets at most one finding per rule, listing every
+clause it violated.
+
+How the rule text was interpreted:
+
+* *Bare primitive*: `String`, `str`, `bool`, `char`, integers, floats, `usize`, `isize`, also
+  behind references (`&str`). Primitives inside generics (`Vec<u8>`, `Option<String>`) count only
+  for R001(b). "Same type" in (a) is the type as written, so `String` and `&str` differ.
+* A `self` receiver is not counted as a parameter by R001.
+* Domain words match whole `_`-separated name tokens (and a plural `s`): `user_id` and `emails`
+  match, `paid`, `monkey` and `identity` do not.
+* Methods in trait impls are skipped by R001 (their signature belongs to the trait).
+* Lengths count characters; exactly 15 (and exactly 200) pass.
+* The default domain words are `id, uid, email, name, username, password, token, key, url, uri,
+  path, user, tenant, session, amount, currency, timestamp`.
+
+### Output
+
+Text output groups findings by file, one `file:line  RULE  message` line each followed by a
+suggestion, then a summary:
+
+```text
+$ codesearch lint examples/sample-project
+src/billing.rs:2  R001  primitive-heavy signature in `charge`: parameters `user_id` and `amount` share ...
+    suggestion: Consider a newtype such as `UserId` for parameter `user_id: u64`. ...
+
+Summary
+  Public functions:   21
+  Flagged functions:  14
+  Findings:           14 (R001: 3, R002: 11)
+  Discoverability:    0.33
+```
+
+`--format json` prints `{"findings": [...], "summary": {...}}`. Each finding has `rule_id`,
+`severity` (`warn`), `file`, `line`, `module`, `function`, `message` and `suggestion`. The summary has
+`public_functions`, `flagged_functions`, `total_findings`, `findings_by_rule` (every rule that ran,
+including zeros) and `discoverability_score`, which is
+`1 - flagged_functions / public_functions` (`1.0` when there are no public functions).
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | No findings, or `--fail-on never` (the default) |
+| `1` | Findings exist and `--fail-on warn` was given |
+| `2` | An error (bad path, unknown rule, broken config, bad arguments) |
+
+### Configuration
+
+Everything is optional; with no file the defaults above apply. Create `.codesearch/lint.toml`
+(the index's own `.gitignore` leaves that one file committable):
+
+```toml
+enabled_rules  = ["R001", "R002"]        # default: every rule
+domain_words   = ["id", "email", "sku"]  # replaces the default list
+min_intent_len = 15                      # R002: minimum first-doc-line length
+ignore         = ["tests/**", "**/generated/**", "*_test.rs"]   # files left out entirely
+```
+
+Ignore globs are matched against `/`-separated paths relative to the project: `*` stays inside
+one path segment, `**` crosses directories, and a pattern without `/` matches the file name only.
+Ignored files do not count towards `public_functions`. `--rule` on the command line overrides
+`enabled_rules`. Unknown keys in the file are an error, so typos are caught.
+
+### Opting out
+
+A plain `//` comment directly above a function (above or between its attributes and doc
+comment) silences the named rules for that function:
+
+```rust
+// codesearch-lint: allow(R001)
+// codesearch-lint: allow(R001, R002)
+```
+
+The function still counts as public in the score; it just cannot be flagged by those rules.
+Opt-outs are read during extraction and stored in the index.
+
+### Adding a rule
+
+Implement `lint::Rule` (`id()` and a pure `check(&FunctionSig, &LintConfig) -> Vec<Finding>`) in a
+new `src/lint/rules/` module and add one line to `rules::all()`. Selection, opt-outs, ignores,
+reporting and exit codes all work on rule ids, so none of that code changes.
 
 ## Scope and limitations
 

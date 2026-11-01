@@ -29,7 +29,10 @@ fn single_parameter_without_parentheses() {
 
 #[test]
 fn single_parameter_with_parentheses_is_the_same_query() {
-    assert_eq!(parse("(UserId) -> UserDetails"), parse("UserId -> UserDetails"));
+    assert_eq!(
+        parse("(UserId) -> UserDetails"),
+        parse("UserId -> UserDetails")
+    );
 }
 
 #[test]
@@ -109,7 +112,10 @@ fn deeply_nested_generics_with_adjacent_closing_brackets() {
             vec![g("Option", vec![g("Result", vec![t("A"), t("B")])])]
         )]
     );
-    assert_eq!(q.ret, g("HashMap", vec![t("String"), g("Vec", vec![t("u8")])]));
+    assert_eq!(
+        q.ret,
+        g("HashMap", vec![t("String"), g("Vec", vec![t("u8")])])
+    );
 }
 
 #[test]

@@ -115,8 +115,14 @@ fn trait_impls_and_trait_declarations_are_labelled() {
         impl<T: Clone> Wrapper<T> { fn inner(&self) -> T { todo!() } }
         ",
     );
-    let labels: Vec<_> = sigs.iter().map(|s| s.impl_target.clone().unwrap()).collect();
-    assert_eq!(labels, vec!["trait Store", "Store for Memory", "Wrapper<T>"]);
+    let labels: Vec<_> = sigs
+        .iter()
+        .map(|s| s.impl_target.clone().unwrap())
+        .collect();
+    assert_eq!(
+        labels,
+        vec!["trait Store", "Store for Memory", "Wrapper<T>"]
+    );
 }
 
 #[test]
@@ -154,7 +160,10 @@ fn qualified_and_exotic_types_do_not_panic() {
         ",
     );
     assert_eq!(sigs.len(), 4);
-    assert_eq!(find(&sigs, "c").signature_string(), "impl Fn<(A, B), C> -> ()");
+    assert_eq!(
+        find(&sigs, "c").signature_string(),
+        "impl Fn<(A, B), C> -> ()"
+    );
     assert_eq!(
         find(&sigs, "d").signature_string(),
         "impl Iterator<Item = u32> -> ()"
@@ -168,7 +177,10 @@ fn module_paths_come_from_the_file_path_and_inline_modules() {
     assert_eq!(module_path_for_file("src/lib.rs"), "");
     assert_eq!(module_path_for_file("src/main.rs"), "");
     assert_eq!(module_path_for_file("crates/core/src/x/y.rs"), "x::y");
-    assert_eq!(module_path_for_file("tests/integration.rs"), "tests::integration");
+    assert_eq!(
+        module_path_for_file("tests/integration.rs"),
+        "tests::integration"
+    );
     assert_eq!(module_path_for_file("build.rs"), "build");
 
     let sigs = extract_functions(
@@ -184,7 +196,10 @@ fn module_paths_come_from_the_file_path_and_inline_modules() {
     .unwrap();
     assert_eq!(find(&sigs, "top").module, "auth::login");
     assert_eq!(find(&sigs, "deep").module, "auth::login::inner");
-    assert_eq!(find(&sigs, "deepest").module, "auth::login::inner::innermost");
+    assert_eq!(
+        find(&sigs, "deepest").module,
+        "auth::login::inner::innermost"
+    );
 }
 
 #[test]

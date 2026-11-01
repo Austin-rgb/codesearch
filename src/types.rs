@@ -169,6 +169,51 @@ impl FnKind {
     }
 }
 
+/// Nominal visibility of a function as written in the source (`pub`, `pub(crate)`, ...).
+///
+/// This is purely syntactic: a `pub fn` inside a private module is still `Pub`, and methods
+/// in trait impls, which cannot carry a visibility keyword, are `Private`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Visibility {
+    Pub,
+    PubCrate,
+    PubSuper,
+    /// `pub(in some::path)`; the path is stored without whitespace.
+    PubIn(String),
+    /// No visibility keyword (also `pub(self)`).
+    Private,
+}
+
+impl Visibility {
+    /// Inverse of the `Display` form, as stored in the index.
+    pub fn from_db(s: &str) -> Self {
+        match s {
+            "pub" => Visibility::Pub,
+            "pub(crate)" => Visibility::PubCrate,
+            "pub(super)" => Visibility::PubSuper,
+            other => match other
+                .strip_prefix("pub(in ")
+                .and_then(|rest| rest.strip_suffix(')'))
+            {
+                Some(path) => Visibility::PubIn(path.to_string()),
+                None => Visibility::Private,
+            },
+        }
+    }
+}
+
+impl fmt::Display for Visibility {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Visibility::Pub => f.write_str("pub"),
+            Visibility::PubCrate => f.write_str("pub(crate)"),
+            Visibility::PubSuper => f.write_str("pub(super)"),
+            Visibility::PubIn(path) => write!(f, "pub(in {path})"),
+            Visibility::Private => f.write_str("private"),
+        }
+    }
+}
+
 /// One named, typed parameter. For receivers the name is `self` and the type is
 /// `Self`, `&Self` or `&mut Self` (or the explicit type for `self: Box<Self>`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -196,6 +241,18 @@ pub struct FunctionSig {
     /// Path relative to the project root, always with `/` separators.
     pub file: String,
     pub line: usize,
+    pub visibility: Visibility,
+    /// Full doc-comment text (one `\n`-separated string, one leading space stripped per
+    /// line), or `None` when the function has no doc comment.
+    pub doc: Option<String>,
+    /// First line of `doc`, trimmed. `Some("")` when the doc starts with a blank line.
+    pub doc_first_line: Option<String>,
+    /// For methods inside `impl Trait for Type`: the rendered trait path, e.g. `fmt::Display`.
+    /// `None` for inherent impls, trait declarations and free functions.
+    pub trait_impl: Option<String>,
+    /// Rule ids named by a `// codesearch-lint: allow(...)` comment above the function,
+    /// upper-cased.
+    pub lint_allow: Vec<String>,
 }
 
 impl FunctionSig {

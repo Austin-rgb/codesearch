@@ -7,6 +7,7 @@
 //! ```
 
 pub mod auth;
+pub mod billing;
 pub mod config;
 pub mod types;
 pub mod users;

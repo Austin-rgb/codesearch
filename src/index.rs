@@ -17,7 +17,7 @@
 //! Files that disappeared are deleted (their functions go with them via `ON DELETE CASCADE`).
 
 use crate::extractor;
-use crate::types::{FnKind, FunctionSig};
+use crate::types::{FnKind, FunctionSig, Visibility};
 use anyhow::{Context, Result};
 use rusqlite::types::Value;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -32,7 +32,7 @@ pub const INDEX_DIR: &str = ".codesearch";
 const DB_FILE: &str = "index.db";
 /// Bump when the table layout or the stored JSON shape changes. A mismatch
 /// rebuilds the index from scratch on the next run.
-const SCHEMA_VERSION: &str = "1";
+const SCHEMA_VERSION: &str = "2";
 
 /// Directories that are never scanned.
 const SKIP_DIRS: [&str; 4] = [".git", "target", "node_modules", INDEX_DIR];
@@ -59,7 +59,12 @@ CREATE TABLE IF NOT EXISTS functions (
     ret_head     TEXT,
     line         INTEGER NOT NULL,
     params_json  TEXT NOT NULL,
-    ret_json     TEXT NOT NULL
+    ret_json     TEXT NOT NULL,
+    visibility      TEXT NOT NULL,
+    doc             TEXT,
+    doc_first_line  TEXT,
+    trait_impl      TEXT,
+    lint_allow      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_functions_sig  ON functions(param_count, ret_head);
 CREATE INDEX IF NOT EXISTS idx_functions_file ON functions(file_id);
@@ -68,8 +73,17 @@ CREATE INDEX IF NOT EXISTS idx_functions_file ON functions(file_id);
 const INSERT_FUNCTION: &str = "
 INSERT INTO functions
     (file_id, name, module, kind, impl_target, has_self, generics,
-     param_count, ret_head, line, params_json, ret_json)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)";
+     param_count, ret_head, line, params_json, ret_json,
+     visibility, doc, doc_first_line, trait_impl, lint_allow)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)";
+
+/// Column list shared by every query that rebuilds a `FunctionSig`; the order matches
+/// `row_to_signature`.
+const SELECT_SIGNATURES: &str = "
+SELECT f.path, fu.name, fu.module, fu.kind, fu.impl_target, fu.has_self,
+       fu.generics, fu.line, fu.params_json, fu.ret_json,
+       fu.visibility, fu.doc, fu.doc_first_line, fu.trait_impl, fu.lint_allow
+FROM functions fu JOIN files f ON f.id = fu.file_id";
 
 /// What an [`Index::update`] run did.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -139,7 +153,8 @@ impl Index {
         // Keep the index out of version control without touching the project's own .gitignore.
         let gitignore = dir.join(".gitignore");
         if !gitignore.exists() {
-            fs::write(&gitignore, "*\n").ok();
+            // Ignore the database, but keep the optional lint config committable.
+            fs::write(&gitignore, "*\n!lint.toml\n").ok();
         }
 
         let db_path = dir.join(DB_FILE);
@@ -166,7 +181,11 @@ impl Index {
             [SCHEMA_VERSION],
         )?;
 
-        Ok(Self { conn, root, db_path })
+        Ok(Self {
+            conn,
+            root,
+            db_path,
+        })
     }
 
     /// The canonical project root this index covers.
@@ -274,6 +293,8 @@ impl Index {
                 let line = f.line as i64;
                 let params_json = serde_json::to_string(&f.params)?;
                 let ret_json = serde_json::to_string(&f.ret)?;
+                let visibility = f.visibility.to_string();
+                let lint_allow = f.lint_allow.join(",");
                 insert.execute(params![
                     file_id,
                     f.name,
@@ -287,6 +308,11 @@ impl Index {
                     line,
                     params_json,
                     ret_json,
+                    visibility,
+                    f.doc,
+                    f.doc_first_line,
+                    f.trait_impl,
+                    lint_allow,
                 ])?;
             }
         }
@@ -308,12 +334,7 @@ impl Index {
     where
         F: FnMut(FunctionSig) -> Result<()>,
     {
-        let mut sql = String::from(
-            "SELECT f.path, fu.name, fu.module, fu.kind, fu.impl_target, fu.has_self,
-                    fu.generics, fu.line, fu.params_json, fu.ret_json
-             FROM functions fu JOIN files f ON f.id = fu.file_id
-             WHERE ",
-        );
+        let mut sql = format!("{SELECT_SIGNATURES}\nWHERE ");
         let mut values = vec![Value::Integer(filter.param_count as i64)];
 
         if filter.ignore_self {
@@ -329,6 +350,21 @@ impl Index {
 
         let mut stmt = self.conn.prepare_cached(&sql)?;
         let mut rows = stmt.query(rusqlite::params_from_iter(values))?;
+        while let Some(row) = rows.next()? {
+            visit(row_to_signature(row)?)?;
+        }
+        Ok(())
+    }
+
+    /// Streams every indexed function, ordered by file and line, to `visit`.
+    /// Used by the linter; like `for_each_candidate` it never holds more than one row.
+    pub fn for_each_function<F>(&self, mut visit: F) -> Result<()>
+    where
+        F: FnMut(FunctionSig) -> Result<()>,
+    {
+        let sql = format!("{SELECT_SIGNATURES}\nORDER BY f.path, fu.line");
+        let mut stmt = self.conn.prepare_cached(&sql)?;
+        let mut rows = stmt.query([])?;
         while let Some(row) = rows.next()? {
             visit(row_to_signature(row)?)?;
         }
@@ -359,8 +395,19 @@ fn row_to_signature(row: &rusqlite::Row<'_>) -> Result<FunctionSig> {
     let kind: String = row.get(3)?;
     let has_self: i64 = row.get(5)?;
     let line: i64 = row.get(7)?;
+    let visibility: String = row.get(10)?;
+    let lint_allow: String = row.get(14)?;
 
     Ok(FunctionSig {
+        visibility: Visibility::from_db(&visibility),
+        doc: row.get(11)?,
+        doc_first_line: row.get(12)?,
+        trait_impl: row.get(13)?,
+        lint_allow: lint_allow
+            .split(',')
+            .filter(|id| !id.is_empty())
+            .map(str::to_string)
+            .collect(),
         file: row.get(0)?,
         name: row.get(1)?,
         module: row.get(2)?,

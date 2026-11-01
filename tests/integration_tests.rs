@@ -50,7 +50,11 @@ fn first_search_creates_the_index_automatically() {
 fn initial_then_incremental_indexing() {
     let dir = TempDir::new().unwrap();
     write(dir.path(), "src/a.rs", "fn a(x: A) -> B { todo!() }");
-    write(dir.path(), "src/b.rs", "fn b(x: A) -> B { todo!() }\nfn c() {}");
+    write(
+        dir.path(),
+        "src/b.rs",
+        "fn b(x: A) -> B { todo!() }\nfn c() {}",
+    );
 
     let mut index = Index::open(dir.path()).unwrap();
 
@@ -63,7 +67,12 @@ fn initial_then_incremental_indexing() {
 
     let second = index.update(false).unwrap();
     assert_eq!(
-        (second.added, second.modified, second.removed, second.unchanged),
+        (
+            second.added,
+            second.modified,
+            second.removed,
+            second.unchanged
+        ),
         (0, 0, 0, 2)
     );
     assert!(!second.changed());
@@ -134,7 +143,11 @@ fn new_files_are_picked_up_by_the_next_search() {
     write(dir.path(), "src/a.rs", "fn a(x: A) -> B { todo!() }");
     assert_eq!(find(dir.path(), "A -> B").len(), 1);
 
-    write(dir.path(), "src/deep/nested/b.rs", "fn b(x: A) -> B { todo!() }");
+    write(
+        dir.path(),
+        "src/deep/nested/b.rs",
+        "fn b(x: A) -> B { todo!() }",
+    );
     assert_eq!(
         find(dir.path(), "A -> B"),
         vec!["src/a.rs::a", "src/deep/nested/b.rs::b"]
@@ -168,7 +181,11 @@ fn unparsable_files_are_skipped_and_retried_when_they_change() {
     assert_eq!(index.stats().unwrap().parse_failures, 1);
     assert_eq!(find(dir.path(), "A -> B"), vec!["src/good.rs::good"]);
 
-    write(dir.path(), "src/bad.rs", "fn fixed(x: A) -> B { todo!() }\n");
+    write(
+        dir.path(),
+        "src/bad.rs",
+        "fn fixed(x: A) -> B { todo!() }\n",
+    );
     let report = index.update(false).unwrap();
     assert_eq!((report.modified, report.parse_failures), (1, 0));
     assert_eq!(index.stats().unwrap().parse_failures, 0);
@@ -181,9 +198,21 @@ fn only_rust_files_outside_ignored_directories_are_indexed() {
     write(dir.path(), "src/a.rs", "fn a(x: A) -> B { todo!() }");
     write(dir.path(), "notes.txt", "fn text(x: A) -> B");
     write(dir.path(), "script.py", "def py(x): pass");
-    write(dir.path(), "target/debug/gen.rs", "fn built(x: A) -> B { todo!() }");
-    write(dir.path(), ".git/hooks/x.rs", "fn hook(x: A) -> B { todo!() }");
-    write(dir.path(), "node_modules/pkg/x.rs", "fn vendored(x: A) -> B { todo!() }");
+    write(
+        dir.path(),
+        "target/debug/gen.rs",
+        "fn built(x: A) -> B { todo!() }",
+    );
+    write(
+        dir.path(),
+        ".git/hooks/x.rs",
+        "fn hook(x: A) -> B { todo!() }",
+    );
+    write(
+        dir.path(),
+        "node_modules/pkg/x.rs",
+        "fn vendored(x: A) -> B { todo!() }",
+    );
 
     assert_eq!(find(dir.path(), "A -> B"), vec!["src/a.rs::a"]);
     assert_eq!(Index::open(dir.path()).unwrap().stats().unwrap().files, 1);
@@ -258,7 +287,10 @@ fn sample_project_queries_from_the_spec() {
     );
     assert_eq!(
         sorted(find(&root, "() -> Config")),
-        vec!["src/config.rs::default_config", "src/config.rs::load_config"]
+        vec![
+            "src/config.rs::default_config",
+            "src/config.rs::load_config"
+        ]
     );
     assert_eq!(find(&root, "UserId -> ()"), vec!["src/config.rs::log_out"]);
     assert_eq!(
@@ -355,7 +387,10 @@ fn no_matches_prints_the_documented_message() {
     let query = parse_query("(Nothing, Matches) -> Here").unwrap();
     let outcome = search_project(&root, &query, &SearchOptions::default()).unwrap();
     assert!(outcome.results.is_empty());
-    assert_eq!(format_results(&outcome.results), "No matching functions found.\n");
+    assert_eq!(
+        format_results(&outcome.results),
+        "No matching functions found.\n"
+    );
 }
 
 // ---------------------------------------------------------------- the binary
@@ -384,7 +419,10 @@ fn cli_search_with_project_flag() {
     assert!(out.status.success(), "{}", stderr(&out));
     let text = stdout(&out);
     assert!(text.contains("Found 2 matching functions:"), "{text}");
-    assert!(text.contains("1. authenticate") || text.contains("1. login"), "{text}");
+    assert!(
+        text.contains("1. authenticate") || text.contains("1. login"),
+        "{text}"
+    );
     assert!(text.contains("2 matches found."), "{text}");
 }
 
@@ -406,7 +444,11 @@ fn cli_index_then_stats() {
     assert!(stdout(&out).contains("added"), "{}", stdout(&out));
 
     let again = run(&["index", root]);
-    assert!(stdout(&again).contains("0 added, 0 modified, 0 removed"), "{}", stdout(&again));
+    assert!(
+        stdout(&again).contains("0 added, 0 modified, 0 removed"),
+        "{}",
+        stdout(&again)
+    );
 
     let stats = run(&["--project", root, "stats"]);
     assert!(stats.status.success(), "{}", stderr(&stats));
@@ -424,7 +466,12 @@ fn cli_ignore_self_flag() {
     let without = stdout(&run(&["-p", root, "UserId -> Option<UserDetails>"]));
     assert!(without.contains("1 match found."), "{without}");
 
-    let with = stdout(&run(&["-p", root, "--ignore-self", "UserId -> Option<UserDetails>"]));
+    let with = stdout(&run(&[
+        "-p",
+        root,
+        "--ignore-self",
+        "UserId -> Option<UserDetails>",
+    ]));
     assert!(with.contains("2 matches found."), "{with}");
 }
 
